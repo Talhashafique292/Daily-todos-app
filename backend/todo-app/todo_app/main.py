@@ -70,19 +70,26 @@ async def create_todo(todo:Todo, session:Annotated[Session, Depends(get_session)
 async def get_all(session:Annotated[Session,Depends(get_session)]):
     statement = select(Todo)
     todos = session.exec(statement).all() 
-    return todos
+    if todos:
+        return todos
+    else:
+        raise HTTPException (status_code=404, detail="No task found")
+
 
 @app.get('/todos/{id}', response_model=Todo)
-async def get_single_todo(id:int, todo:Todo, session:Annotated[Session,Depends(get_session)]):
+async def get_single_todo(id:int,  session:Annotated[Session,Depends(get_session)]):
     todos = session.exec(select(Todo).where(Todo.id == id)).first()
-    return todos
+    if todos:
+        return todos
+    else:
+        raise HTTPException (status_code=404, detail="No task found")
 
 @app.put('/todos/{id}')
 async def update_todo(id:int,todo:Todo, session:Annotated[Session,Depends(get_session)]):
     existing_todo = session.exec(select(Todo).where(Todo.id==id)).first()
     if existing_todo:
-        existing_todo.content = Todo.content
-        existing_todo.is_completed = Todo.is_completed 
+        existing_todo.content = todo.content
+        existing_todo.is_completed = todo.is_completed 
         session.add(existing_todo)
         session.commit()
         session.refresh(existing_todo)
@@ -92,8 +99,13 @@ async def update_todo(id:int,todo:Todo, session:Annotated[Session,Depends(get_se
 
 @app.delete('/todos/{id}')
 async def delete_todo(id:int, session:Annotated[Session,Depends(get_session)]):
-    todo = session.exec(select(Todo).where(Todo.id==id)).first()
-    session.delete(todo)
-    session.commit()
-    session.refresh(todo)
-    return todo
+    # todo = session.exec(select(Todo).where(Todo.id==id)).first()
+    todo = session.get(Todo, id)
+    if todo:
+        session.delete(todo)
+        session.commit()
+        # session.refresh(todo)
+        return {"message": "Task deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="no task deleted") 
+       
