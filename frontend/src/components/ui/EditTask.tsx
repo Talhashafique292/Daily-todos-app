@@ -1,18 +1,57 @@
-export default function EditTask() {
+"use client";
+
+import { edit_todo } from "@/actions/actions";
+import { Todo } from "../../../types";
+import { useFormState } from "react-dom";
+import React, { useEffect } from "react";
+import SubmitButton from "../SubmitButton";
+import toast from "react-hot-toast";
+import { useState } from "react";
+
+export default function EditTask({ task }: { task: Todo }) {
+  const [value, setValue] = useState(task.content);
+  const [state, formActioin] = useFormState(edit_todo, {
+    status: " ",
+    message: " ",
+  });
+  const { status, message } = state;
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValue(e.target.value);
+  };
+
+  const handleSubmit = (formData: FormData) => {
+    const id: number = task.id;
+    const content: string = formData.get("edit_task") as string;
+    const is_completed: boolean = task.is_completed;
+    formActioin({ id, content, is_completed });
+  };
+
+  useEffect(() => {
+    if (status == "success") {
+      toast.success(message);
+    } else if (status == "error") {
+      toast.error(message);
+    }
+  }, [state]);
+
   return (
-    <form className="flex flex-col justify-between items-center gap-x-3 w-full">
+    <form
+      action={handleSubmit}
+      className="flex flex-col justify-between items-center gap-x-3 w-full"
+    >
       <input
+        onChange={handleChange}
         type="text"
-        placeholder="Add Task here"
+        // placeholder="Add Task here"
         minLength={3}
         maxLength={54}
         required
         name="edit_task"
+        value={value}
         className="w-full px-2 py-1 border border-gray-100 rounded-md"
       />
-      <button className="px-2 py-1 bg-teal-600 text-white rounded-md w-full mt-4 ">
-        Save
-      </button>
+      <SubmitButton />
     </form>
   );
 }

@@ -11,17 +11,20 @@ import {
 import AddTask from "./AddTask";
 import { Edit } from "lucide-react";
 import EditTask from "./EditTask";
+import { Todo } from "../../../types";
 
 export function Modal({
   children,
   title,
   Adding,
   Editing,
+  task,
 }: {
   children: React.ReactNode;
   title: string;
   Adding?: boolean;
   Editing?: boolean;
+  task: Todo;
 }) {
   return (
     <Dialog>
@@ -31,7 +34,7 @@ export function Modal({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
         {Adding && <AddTask />}
-        {Editing && <EditTask />}
+        {Editing && <EditTask task={task} />}
       </DialogContent>
     </Dialog>
   );

@@ -1,6 +1,34 @@
+"use client";
+import { add_todo } from "@/actions/actions";
+import { useEffect } from "react";
+import { useFormState } from "react-dom";
+import { useRef } from "react";
+import toast from "react-hot-toast";
+import SubmitButton from "../SubmitButton";
+
 export default function AddTask() {
+  const [state, formActioin] = useFormState(add_todo, {
+    status: " ",
+    message: " ",
+  });
+  const { status, message } = state;
+  const ref = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    if (status == "success") {
+      ref.current?.reset();
+      toast.success(message);
+    } else if (status == "error") {
+      toast.error(message);
+    }
+  }, [state]);
+
   return (
-    <form className="flex flex-col justify-between items-center gap-x-3 w-full">
+    <form
+      ref={ref}
+      action={formActioin}
+      className="flex flex-col justify-between items-center gap-x-3 w-full"
+    >
       <input
         type="text"
         placeholder="Add Task here"
@@ -10,9 +38,7 @@ export default function AddTask() {
         name="add_task"
         className="w-full px-2 py-1 border border-gray-100 rounded-md"
       />
-      <button className="px-2 py-1 bg-teal-600 text-white rounded-md w-full mt-4 ">
-        Save
-      </button>
+      <SubmitButton />
     </form>
   );
 }
