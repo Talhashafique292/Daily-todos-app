@@ -1,47 +1,15 @@
 from fastapi import FastAPI, Depends, HTTPException
-from sqlmodel import SQLModel, Field, create_engine, Session, select
 from todo_app import setting
+from sqlmodel import SQLModel, Field, create_engine, Session, select
 from typing import Annotated
 from contextlib import asynccontextmanager
+from todo_app.db import get_session, create_tables
+from todo_app.models import Todo, Token, User, Todo_Create, Todo_Update
+from todo_app.router import user
+from fastapi.security import OAuth2PasswordRequestForm
+from todo_app.auth import authenticate_user, create_access_token, EXPIRE_TIME, current_user
+from datetime import timedelta
 
-# create model
-  # data model is for data validation (pydantic)
-  # table model for creating tables in db
-class Todo(SQLModel, table = True):
-    id : int| None = Field(default=None, primary_key=True)
-    content: str = Field(index=True, min_length=3, max_length=54)
-    is_completed : bool = Field(default=False)
-
-# Connection string for engine
-connection_string : str = str(setting.DATABASE_URL).replace("postgresql","postgresql+psycopg") 
-
-# Engine:connection to db and is one for whole application
-
-engine = create_engine(connection_string, connect_args={"sslmode": "require"}, pool_recycle=300)
-
-# create tables
-def create_tables():
-    SQLModel.metadata.create_all(engine)
-
-# todo1 : Todo = Todo(content="first task")
-# todo2 : Todo = Todo(content="second task")
-
-# session: seperate session for each transaction/functionality through engine
-session = Session(engine)
-
-# # create todos in db
-# session.add(todo1)
-# session.add(todo2)
-# print(f'Before commit {todo1}')
-# session.commit()
-# session.refresh(todo1)
-# print(f'After commit {todo1}')
-# session.close()
-
-# a better way is to make function of session
-def get_session():
-    with Session(engine) as session:
-        yield session
 
 # contextmanager will create tables firstly as app starts
 @asynccontextmanager
@@ -54,22 +22,42 @@ async def lifespan(app:FastAPI):
 
 app: FastAPI = FastAPI(lifespan=lifespan, title="Daily todos app", version='1.0.0')
 
+#including app router 
+app.include_router(router=user.user_router)
+
 @app.get('/')
 async def root():
     return {"message": "Welcome to Daily TODOs App"}
 
 
+# login    
+@app.post('/token', response_model=Token)
+async def login(form_data:Annotated[OAuth2PasswordRequestForm, Depends()],
+                session:Annotated[Session, Depends(get_session)]):
+    user = authenticate_user(form_data.username,form_data.password,session)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    expire_time = timedelta(minutes=EXPIRE_TIME)
+    access_token = create_access_token({"sub":form_data.username}, expire_time)    
+    return Token(access_token=access_token, token_type="bearer")
+    
+
 @app.post('/todos/', response_model=Todo)
-async def create_todo(todo:Todo, session:Annotated[Session, Depends(get_session)]):
-    session.add(todo)
+async def create_todo(current_user:Annotated[User,Depends(current_user)], 
+                    todo:Todo_Create,
+                    session:Annotated[Session, Depends(get_session)]):
+    new_todo = Todo(content=todo.content, user_id=current_user.id)
+
+    session.add(new_todo)
     session.commit()
-    session.refresh(todo)
-    return todo
+    session.refresh(new_todo)
+    return new_todo
 
 @app.get('/todos/', response_model= list[Todo])
-async def get_all(session:Annotated[Session,Depends(get_session)]):
-    statement = select(Todo)
-    todos = session.exec(statement).all() 
+async def get_all(current_user:Annotated[User,Depends(current_user)],
+                    session:Annotated[Session,Depends(get_session)]):
+    todos = session.exec(select(Todo).where(Todo.user_id == current_user.id)).all() 
     if todos:
         return todos
     else:
@@ -77,16 +65,26 @@ async def get_all(session:Annotated[Session,Depends(get_session)]):
 
 
 @app.get('/todos/{id}', response_model=Todo)
-async def get_single_todo(id:int,  session:Annotated[Session,Depends(get_session)]):
-    todos = session.exec(select(Todo).where(Todo.id == id)).first()
-    if todos:
-        return todos
+async def get_single_todo(id:int, 
+                            current_user:Annotated[User,Depends(current_user)], 
+                            session:Annotated[Session,Depends(get_session)]):
+
+    user_todos = session.exec(select(Todo).where(Todo.user_id == current_user.id)).all()
+    matched_todo = next((todo for todo in user_todos if todo.id == id),None)
+    if matched_todo:
+        return matched_todo
     else:
         raise HTTPException (status_code=404, detail="No task found")
 
 @app.put('/todos/{id}')
-async def update_todo(id:int,todo:Todo, session:Annotated[Session,Depends(get_session)]):
-    existing_todo = session.exec(select(Todo).where(Todo.id==id)).first()
+async def update_todo(id:int,
+                        todo:Todo_Update, 
+                        current_user:Annotated[User,Depends(current_user)],
+                        session:Annotated[Session,Depends(get_session)]):
+
+    user_todos = session.exec(select(Todo).where(Todo.user_id==current_user.id)).all()                    
+    existing_todo = next((todo for todo in user_todos if todo.id==id),None)
+    
     if existing_todo:
         existing_todo.content = todo.content
         existing_todo.is_completed = todo.is_completed 
@@ -98,9 +96,13 @@ async def update_todo(id:int,todo:Todo, session:Annotated[Session,Depends(get_se
         raise HTTPException (status_code=404, detail="No task found")  
 
 @app.delete('/todos/{id}')
-async def delete_todo(id:int, session:Annotated[Session,Depends(get_session)]):
-    # todo = session.exec(select(Todo).where(Todo.id==id)).first()
-    todo = session.get(Todo, id)
+async def delete_todo(id:int, 
+                        current_user:Annotated[User,Depends(current_user)],
+                        session:Annotated[Session,Depends(get_session)]):
+
+    user_todos = session.exec(select(Todo).where(Todo.user_id==current_user.id)).all()
+    todo = next((todo for todo in user_todos if todo.id==id),None)
+
     if todo:
         session.delete(todo)
         session.commit()
