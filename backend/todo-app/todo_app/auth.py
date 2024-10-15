@@ -2,7 +2,7 @@ from sqlmodel import Session, select
 from typing import Annotated
 from todo_app.db import get_session
 from fastapi import Depends, HTTPException,status
-from todo_app.models import User, Todo, TokenData
+from todo_app.models import User, Todo, TokenData, RefreshTokenData
 from passlib.context import CryptContext
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -77,6 +77,41 @@ def current_user(token:Annotated[str,Depends(oauth_scheme)],
         raise JWTError
 
     user = get_user_from_db(session, username=token_data.username)   
+    if not user:
+        raise credential_exception
+
+    return user      
+
+def create_refresh_token(data:dict, expiry_time:timedelta|None):
+    data_to_encode = data.copy()
+    if expiry_time:
+        expire = datetime.now(timezone.utc) + expiry_time
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)    
+    data_to_encode.update({"exp":expire})
+    encoded_jwt = jwt.encode(data_to_encode,SECRET_KEY, algorithm=ALGORITHM,)
+    return encoded_jwt   
+
+def validate_refresh_token(token:str,
+                            session:Annotated[Session,Depends(get_session)]):
+
+    credential_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid token, Please login again",
+        headers={"www-Authenticate":"Bearer"}
+    )
+
+    try:
+        payload=jwt.decode(token, SECRET_KEY, ALGORITHM)
+        email: str | None = payload.get("sub")
+        if email is None:
+            raise credential_exception
+        token_data = RefreshTokenData(email= email)  
+
+    except:
+        raise JWTError
+
+    user = get_user_from_db(session, email=token_data.email)   
     if not user:
         raise credential_exception
 

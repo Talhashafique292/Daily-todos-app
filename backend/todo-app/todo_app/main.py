@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException,status
 from todo_app import setting
 from sqlmodel import SQLModel, Field, create_engine, Session, select
 from typing import Annotated
@@ -7,7 +7,7 @@ from todo_app.db import get_session, create_tables
 from todo_app.models import Todo, Token, User, Todo_Create, Todo_Update
 from todo_app.router import user
 from fastapi.security import OAuth2PasswordRequestForm
-from todo_app.auth import authenticate_user, create_access_token, EXPIRE_TIME, current_user
+from todo_app.auth import authenticate_user, create_access_token, EXPIRE_TIME, current_user, validate_refresh_token, create_refresh_token
 from datetime import timedelta
 
 
@@ -39,9 +39,35 @@ async def login(form_data:Annotated[OAuth2PasswordRequestForm, Depends()],
         raise HTTPException(status_code=401, detail="Invalid username or password")
 
     expire_time = timedelta(minutes=EXPIRE_TIME)
-    access_token = create_access_token({"sub":form_data.username}, expire_time)    
-    return Token(access_token=access_token, token_type="bearer")
+    access_token = create_access_token({"sub":form_data.username}, expire_time)  
+
+    refresh_expire_time = timedelta(days=7)
+    refresh_token = create_refresh_token({"sub":user.email}, refresh_expire_time)
+
+    return Token(access_token=access_token, token_type="bearer", refresh_token=refresh_token)
     
+
+@app.post('/token/refresh')
+def refresh_token(old_refresh_token:str,
+                    session:Annotated[Session,Depends(get_session)]):
+    credential_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid token, Please login again",
+        headers={"www-Authenticate":"Bearer"}
+    )    
+    user = validate_refresh_token(old_refresh_token,
+                                    session)
+    if not user:
+        raise credential_exception   
+
+    expire_time = timedelta(minutes=EXPIRE_TIME)
+    access_token = create_access_token({"sub":user.username}, expire_time)   
+
+    refresh_expire_time = timedelta(days=7)
+    refresh_token = create_refresh_token({"sub":user.email}, refresh_expire_time)
+
+    return Token(access_token=access_token, token_type='bearer', refresh_token=refresh_token)
+
 
 @app.post('/todos/', response_model=Todo)
 async def create_todo(current_user:Annotated[User,Depends(current_user)], 
